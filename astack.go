@@ -1,27 +1,34 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"mime/multipart"
-	"net/http"
+	"github.com/widuu/goini"
 	"os"
+
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
+
+	"github.com/xuanmingyi/astack/models"
+
+//	"github.com/olekukonko/tablewriter"
+
 )
 
 var base_url = "http://localhost:9090"
 
 type command_func func([]string)
 
+type Option struct {
+	db        string
+	image_dir string
+}
+
+var global_option Option
+
 func panic_exit(msg string) {
 	fmt.Println(msg)
 	os.Exit(1)
 }
-
-func do_get(url string) {
-}
-
 
 func args_parse(args []string, name string, require_value bool) string {
 	for index, value := range args {
@@ -40,47 +47,40 @@ func args_parse(args []string, name string, require_value bool) string {
 	return "false"
 }
 
+func config_parse(config_file string) {
+	conf := goini.SetConfig(config_file)
+	global_option.db = conf.GetValue("default", "db")
+}
+
+
+func get_db() *DB{
+        db, err := gorm.Open("sqlite3", global_option.db)
+        if err != nil {
+                panic(fmt.Sprintf("%s: %s", err, "failed to connect database"))
+        }
+	return db
+}
+
+
 func image_create(args []string) {
 	//astack image-create --name cirros --file cirros.img --format qcow2
-	url := fmt.Sprintf("%s/image", base_url)
-
-	//name := args_parse(args, "--name", true)
 	file := args_parse(args, "--file", true)
+	//name := args_parse(args, "--name", true)
 	//format := args_parse(args, "--format", true)
 
-	body_buf := &bytes.Buffer{}
-	body_writer := multipart.NewWriter(body_buf)
+	db := get_db()
 
-	file_writer, err := body_writer.CreateFormFile("uploadfile", file)
-	if err != nil {
-		panic_exit("Error writing to buffer")
+	// sha1
+	sum, err1 := sha1_sum(file)
+	if err1 != nil {
+		panic_exit(err1.Error())
 	}
+	fmt.Println(sum)
 
-	file_hander, err := os.Open(file)
-	if err != nil {
-		panic_exit("Error opening file")
-	}
-	defer file_hander.Close()
+	//url := fmt.Sprintf("%s/image", base_url)
 
-	_, err = io.Copy(file_writer, file_hander)
-	if err != nil {
-		panic_exit("Error copy file")
-	}
-	content_type := body_writer.FormDataContentType()
-	body_writer.Close()
-
-	resp, err := http.Post(url, content_type, body_buf)
-	if err != nil {
-		panic_exit("Error in post")
-	}
-	defer resp.Body.Close()
-
-	resp_body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic_exit("Error in read body")
-	}
-	fmt.Println(string(resp_body))
 }
+
 
 func image_list(args []string) {
 	fmt.Println("image_list", args)
@@ -91,7 +91,23 @@ var command_mappings = map[string]command_func{
 	"image-list":   image_list,
 }
 
+func _init() {
+	config_file, err1 := find_first_config_file()
+	if err1 != nil {
+		panic_exit(err1.Error())
+	}
+	config_parse(config_file)
+
+	db := get_db()
+	defer db.Close()
+
+	// Migrate the schema
+	db.AutoMigrate(&models.Image{})
+}
+
 func main() {
+	_init()
+
 	if len(os.Args) == 1 {
 		panic_exit("Error")
 	}

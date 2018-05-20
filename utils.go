@@ -35,3 +35,18 @@ func sha1_sum(filename string) (string, error) {
 	}
 	return fmt.Sprintf("%x", sum.Sum(nil)), nil
 }
+
+func copy_file(src_file, dst_file string) (written int64, err error) {
+	src, err := os.Open(src_file)
+	if err != nil {
+		return
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(dst_file, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return
+	}
+	defer dst.Close()
+	return io.Copy(dst, src)
+}

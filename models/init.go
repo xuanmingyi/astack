@@ -11,3 +11,9 @@ type Image struct {
 	Checksum string
 	Status   string
 }
+
+type Volume struct {
+	gorm.Model
+	Name string
+	Size int64
+}
